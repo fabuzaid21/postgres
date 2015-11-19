@@ -25,6 +25,38 @@
 #include "executor/nodeNestloop.h"
 #include "utils/memutils.h"
 
+/**
+ * Depth-first search to find all the relations in the entire query.
+ * The relations array will be populated with those relations.
+ */
+void
+findAllRelations(Plan ** relations, Plan * node, int * counter)
+{
+    if (node == NULL)
+      return;
+
+    Plan * outerPlan;
+    Plan * innerPlan;
+    switch (nodeTag(node))
+    {
+        /*
+         * scan nodes
+         */
+      case T_SeqScan:
+      case T_IndexScan:
+        relations[(*counter)++] = node;
+        break;
+      case T_NestLoop:
+         outerPlan = node->lefttree;
+         innerPlan = node->righttree;
+
+         findAllRelations(relations, outerPlan, counter);
+         findAllRelations(relations, innerPlan, counter);
+         break;
+		default:
+			elog(DEBUG1, "Only NestLoop, SeqScan, and IndexScan are supported");
+    }
+}
 
 /* ----------------------------------------------------------------
  *		ExecNestLoop(node)
@@ -79,6 +111,12 @@ ExecNestLoop(NestLoopState *node)
 	otherqual = node->js.ps.qual;
 	outerPlan = outerPlanState(node);
 	innerPlan = innerPlanState(node);
+
+  const int numRelations = 10;
+  Plan * relations[numRelations];
+  int counter = 0;
+  findAllRelations(relations, (Plan *) nl, &counter);
+
 	econtext = node->js.ps.ps_ExprContext;
 
 	/*
